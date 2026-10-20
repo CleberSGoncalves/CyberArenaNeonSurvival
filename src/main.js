@@ -50,6 +50,11 @@ window.addEventListener('DOMContentLoaded', async () => {
         engine.loadSector(sectorId - 1);
       }
     },
+    onSelectMap: (mapId) => {
+      if (engine) {
+        engine.loadMap(mapId);
+      }
+    },
     onCompleteEarly: () => {
       if (engine) {
         engine.completeSectorIfEligible();

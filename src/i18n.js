@@ -84,7 +84,16 @@ const TRANSLATIONS = {
     quest2x: '2X REWARD [AD]',
 
     // Controls
-    controlsHelp: 'WASD / ARROWS: Move | MOUSE: Aim & Fire | SPACE / SHIFT: Cyber Dash | Q: Shield Battery | E / F: Loot Crate'
+    controlsHelp: 'WASD / ARROWS: Move | MOUSE: Aim & Fire | SPACE / SHIFT: Cyber Dash | Q: Shield Battery | E / F: Loot Crate',
+
+    // Maps
+    mapsTitle: 'CYBER ARENA SELECTION',
+    mapsSelect: 'ARENAS',
+    deployMap: 'DEPLOY TO ARENA ➔',
+    loadingMap: 'DECRYPTING NEURAL SECTOR PROTOCOLS...',
+    mapNeonDistrict: 'Neon District',
+    mapCyberGrid: 'Cyber Grid',
+    mapIndustrialSector: 'Industrial Sector'
   },
   pt: {
     // Game Title & Metadata
@@ -164,7 +173,16 @@ const TRANSLATIONS = {
     quest2x: 'DOBRAR [ANÚNCIO]',
 
     // Controls
-    controlsHelp: 'WASD / SETAS: Mover | MOUSE: Mirar e Atirar | ESPAÇO / SHIFT: Cyber Dash | Q: Bateria de Escudo | E / F: Abrir Caixa'
+    controlsHelp: 'WASD / SETAS: Mover | MOUSE: Mirar e Atirar | ESPAÇO / SHIFT: Cyber Dash | Q: Bateria de Escudo | E / F: Abrir Caixa',
+
+    // Maps
+    mapsTitle: 'SELEÇÃO DE ARENA CYBERPUNK',
+    mapsSelect: 'ARENAS',
+    deployMap: 'ENTRAR NA ARENA ➔',
+    loadingMap: 'DECRIPTANDO PROTOCOLOS DE SETOR NEURAL...',
+    mapNeonDistrict: 'Distrito Neon',
+    mapCyberGrid: 'Grade Cibernética',
+    mapIndustrialSector: 'Setor Industrial'
   }
 };
 

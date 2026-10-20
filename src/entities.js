@@ -12,6 +12,7 @@ import { sound } from './audio.js';
 import { shaker, hitStop, floaters, SquashStretch, triggerHaptic } from './juice.js';
 import { storage } from './storage.js';
 import { SKINS_DEF } from './shop.js';
+import { cyberRenderer } from './cyber_renderer.js';
 
 export class Bullet {
   constructor(x, y, angle, weapon, shooterId, damageMult = 1.0) {
@@ -70,18 +71,18 @@ export class Bullet {
     ctx.translate(this.x, this.y);
     ctx.rotate(this.angle);
 
-    // Glowing bullet trail
+    // Glowing bullet trail / plasma bolt
     ctx.fillStyle = this.color;
     ctx.shadowColor = this.color;
-    ctx.shadowBlur = 12;
+    ctx.shadowBlur = 14;
     ctx.beginPath();
-    ctx.ellipse(0, 0, this.radius * 2.2, this.radius, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, this.radius * 2.8, this.radius * 1.1, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Hot center core
-    ctx.fillStyle = this.coreColor;
+    // Hot incandescent core
+    ctx.fillStyle = this.coreColor || '#ffffff';
     ctx.beginPath();
-    ctx.ellipse(0, 0, this.radius * 1.2, this.radius * 0.6, 0, 0, Math.PI * 2);
+    ctx.ellipse(this.radius * 0.4, 0, this.radius * 1.4, this.radius * 0.6, 0, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.restore();
@@ -183,36 +184,45 @@ export class SupplyCrate {
 
   draw(ctx) {
     if (this.isOpened) return;
-    ctx.save();
-    ctx.translate(this.x, this.y);
+    cyberRenderer.drawTacticalDropPod(ctx, this);
+  }
+}
 
-    const pulse = 0.8 + 0.2 * Math.sin(this.pulseTimer);
-    ctx.fillStyle = '#0f172a';
-    ctx.strokeStyle = '#facc15';
-    ctx.lineWidth = 2.5;
-    ctx.shadowColor = '#facc15';
-    ctx.shadowBlur = 14 * pulse;
+export class DestructibleCover {
+  constructor(data) {
+    this.x = sanitize(data.x);
+    this.y = sanitize(data.y);
+    this.w = data.w || 50;
+    this.h = data.h || 50;
+    this.hp = data.hp || 50;
+    this.maxHp = data.maxHp || 50;
+    this.type = data.type || 'destructible_crate';
+    this.explosive = Boolean(data.explosive);
+    this.color = data.color || '#eab308';
+    this.isDestroyed = false;
+  }
 
-    ctx.fillRect(-this.w * 0.5, -this.h * 0.5, this.w, this.h);
-    ctx.strokeRect(-this.w * 0.5, -this.h * 0.5, this.w, this.h);
+  takeDamage(amount) {
+    if (this.isDestroyed) return false;
+    this.hp -= amount;
+    sound.playShieldHit();
+    particles.spawnSparks(this.x + this.w * 0.5, this.y + this.h * 0.5, 6, this.color, 180);
 
-    // High tech cross stripes
-    ctx.strokeStyle = 'rgba(250, 204, 21, 0.4)';
-    ctx.beginPath();
-    ctx.moveTo(-this.w * 0.5, -this.h * 0.5);
-    ctx.lineTo(this.w * 0.5, this.h * 0.5);
-    ctx.moveTo(this.w * 0.5, -this.h * 0.5);
-    ctx.lineTo(-this.w * 0.5, this.h * 0.5);
-    ctx.stroke();
+    if (this.hp <= 0) {
+      this.isDestroyed = true;
+      particles.spawnDisintegration(this.x + this.w * 0.5, this.y + this.h * 0.5, this.color, 18);
+      if (this.explosive) {
+        sound.playShotgun();
+        particles.spawnShockwave(this.x + this.w * 0.5, this.y + this.h * 0.5, 90, '#ef4444', 0.4);
+      }
+      return true; // destroyed
+    }
+    return false;
+  }
 
-    // Emblem
-    ctx.fillStyle = '#fef08a';
-    ctx.font = '16px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('⚡', 0, 0);
-
-    ctx.restore();
+  draw(ctx) {
+    if (this.isDestroyed) return;
+    cyberRenderer.drawDestructibleCover(ctx, this);
   }
 }
 
@@ -314,6 +324,7 @@ export class Character {
     this.kills = 0;
     this.color = isBot ? '#f43f5e' : '#00f5ff';
     this.invulnerableTimer = 0;
+    this.recoilOffset = 0;
   }
 
   takeDamage(amount, attacker = null) {
@@ -421,6 +432,7 @@ export class Character {
     if (this.fireTimer > 0) this.fireTimer -= dt;
     if (this.dashCooldownTimer > 0) this.dashCooldownTimer -= dt;
     if (this.invulnerableTimer > 0) this.invulnerableTimer -= dt;
+    if (this.recoilOffset > 0) this.recoilOffset = Math.max(0, this.recoilOffset - dt * 45);
 
     if (this.isDashing) {
       this.dashTimer -= dt;
@@ -453,6 +465,7 @@ export class Character {
 
     this.clipAmmo--;
     this.fireTimer = this.activeWeapon.fireRate;
+    this.recoilOffset = 10;
     this.squashStretch.punch(0.85, 1.25);
 
     // Muzzle & audio
@@ -485,72 +498,7 @@ export class Character {
 
   draw(ctx) {
     if (!this.isAlive) return;
-
-    ctx.save();
-    ctx.translate(this.x, this.y);
-    ctx.scale(this.squashStretch.scaleX, this.squashStretch.scaleY);
-    ctx.rotate(this.angle);
-
-    // Shield Aura if active
-    if (this.shield > 0) {
-      const shieldAlpha = 0.2 + (this.shield / this.maxShield) * 0.35;
-      ctx.fillStyle = `rgba(56, 189, 248, ${shieldAlpha})`;
-      ctx.strokeStyle = '#38bdf8';
-      ctx.lineWidth = 1.5;
-      ctx.shadowColor = '#00f5ff';
-      ctx.shadowBlur = 10;
-      ctx.beginPath();
-      ctx.arc(0, 0, this.radius + 6, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    }
-
-    // Body Capsule / Cyber Armor
-    ctx.fillStyle = this.color;
-    ctx.shadowColor = this.color;
-    ctx.shadowBlur = 12;
-    ctx.beginPath();
-    ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Inner Dark Core
-    ctx.fillStyle = '#0f172a';
-    ctx.beginPath();
-    ctx.arc(0, 0, this.radius * 0.7, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Weapon Hands / Barrel Projection
-    ctx.fillStyle = this.activeWeapon.color;
-    ctx.fillRect(this.radius * 0.4, -4, 14, 8);
-
-    ctx.restore();
-
-    // HP & Shield Over-head Bar
-    this.drawOverheadBar(ctx);
-  }
-
-  drawOverheadBar(ctx) {
-    const barW = 38;
-    const barH = 4;
-    const barX = this.x - barW * 0.5;
-    const barY = this.y - this.radius - 14;
-
-    ctx.save();
-    // Background bar
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
-    ctx.fillRect(barX - 1, barY - 1, barW + 2, barH * 2 + 3);
-
-    // Shield Bar (cyan, top row)
-    const shieldPct = clamp(this.shield / this.maxShield, 0, 1);
-    ctx.fillStyle = '#38bdf8';
-    ctx.fillRect(barX, barY, barW * shieldPct, barH);
-
-    // HP Bar (green/red, bottom row)
-    const hpPct = clamp(this.hp / this.maxHp, 0, 1);
-    ctx.fillStyle = hpPct > 0.3 ? '#22c55e' : '#ef4444';
-    ctx.fillRect(barX, barY + barH + 1, barW * hpPct, barH);
-
-    ctx.restore();
+    cyberRenderer.drawOperative(ctx, this, !this.isBot, !this.isBot);
   }
 }
 

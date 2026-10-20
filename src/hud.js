@@ -11,6 +11,7 @@ import { i18n } from './i18n.js';
 import { storage } from './storage.js';
 import { sound } from './audio.js';
 import { SECTORS } from './levels.js';
+import { MAPS } from './maps.js';
 import { shop } from './shop.js';
 import { dailyRewards } from './daily_rewards.js';
 import { quests } from './quests.js';
@@ -105,8 +106,9 @@ export class GameHUD {
     this.topBar.id = 'hud-top-bar';
     this.topBar.innerHTML = `
       <div class="top-bar-left">
+        <div class="badge badge-map" id="hud-map-name">🏙️ NEON DISTRICT</div>
         <div class="badge badge-sector" id="hud-sector-name">SECTOR 01</div>
-        <div class="badge badge-alive" id="hud-alive-count">ALIVE: 8</div>
+        <div class="badge badge-alive" id="hud-alive-count">ALIVE: 16</div>
         <div class="badge badge-kills" id="hud-kills-count">KILLS: 0</div>
       </div>
 
@@ -153,6 +155,7 @@ export class GameHUD {
       </div>
 
       <div class="bottom-bar-center">
+        <button class="tactical-btn" id="btn-open-maps">🗺️ ${i18n.t('mapsSelect')}</button>
         <button class="tactical-btn" id="btn-open-shop">🛒 ${i18n.t('upgradesTab')}</button>
         <button class="tactical-btn" id="btn-open-quests">🎯 ${i18n.t('questsTitle')}</button>
         <button class="tactical-btn" id="btn-open-daily">🎁 ${i18n.t('dailyTitle')}</button>
@@ -257,7 +260,18 @@ export class GameHUD {
       </div>
     `);
 
-    // 4. Sector Selection Modal (Grid of visual cards with 3 stars)
+    // 4. Map Selection Modal
+    this.modalMaps = this.createModalElement('modal-maps', `
+      <div class="modal-box modal-large-box">
+        <div class="modal-header">
+          <h2 class="modal-title">${i18n.t('mapsTitle')}</h2>
+          <button class="btn-close-modal" data-close="modal-maps">✕</button>
+        </div>
+        <div class="maps-grid-container" id="maps-grid-container"></div>
+      </div>
+    `);
+
+    // 5. Sector Selection Modal (Grid of visual cards with 3 stars)
     this.modalSectors = this.createModalElement('modal-sectors', `
       <div class="modal-box modal-large-box">
         <div class="modal-header">
@@ -383,6 +397,12 @@ export class GameHUD {
     }
 
     // Tactical Meta Buttons
+    document.getElementById('btn-open-maps')?.addEventListener('click', () => {
+      if (this.callbacks.onPause) this.callbacks.onPause();
+      this.renderMapsModal(this.currentMap ? this.currentMap.id : 'neon_district');
+      this.modalCtrl.open('modal-maps');
+    });
+
     document.getElementById('btn-open-shop')?.addEventListener('click', () => {
       if (this.callbacks.onPause) this.callbacks.onPause();
       this.renderShop();
@@ -520,10 +540,17 @@ export class GameHUD {
     });
   }
 
-  updateHUD(sector, aliveCount, totalCount, kills, stars, weapon, dashCooldownPct) {
+  updateHUD(sector, aliveCount, totalCount, kills, stars, weapon, dashCooldownPct, currentMap = null) {
+    if (currentMap) this.currentMap = currentMap;
     const sName = document.getElementById('hud-sector-name');
     if (sName) {
       sName.textContent = i18n.locale === 'pt' ? sector.namePt : sector.name;
+    }
+
+    const mName = document.getElementById('hud-map-name');
+    if (mName && currentMap) {
+      const isPt = i18n.locale === 'pt';
+      mName.textContent = `${currentMap.icon || '🏙️'} ${(isPt ? currentMap.namePt : currentMap.name).toUpperCase()}`;
     }
 
     const aCount = document.getElementById('hud-alive-count');
@@ -596,6 +623,77 @@ export class GameHUD {
 
     this.modalCtrl.open('modal-defeat');
     sound.playDefeat();
+  }
+
+  renderMapsModal(currentMapId = 'neon_district') {
+    const container = document.getElementById('maps-grid-container');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const isPt = i18n.locale === 'pt';
+    const mapList = Object.values(MAPS);
+
+    mapList.forEach((map) => {
+      const isSelected = map.id === currentMapId;
+      const card = document.createElement('div');
+      card.className = `map-card ${isSelected ? 'selected' : ''}`;
+      card.innerHTML = `
+        <div class="map-card-header">
+          <span class="map-card-icon">${map.icon || '🏙️'}</span>
+          <div class="map-card-title-group">
+            <h4 class="map-card-name">${(isPt ? map.namePt : map.name).toUpperCase()}</h4>
+            <span class="map-card-tagline">${isPt ? map.taglinePt : map.tagline}</span>
+          </div>
+        </div>
+        <p class="map-card-desc">${isPt ? map.descPt : map.desc}</p>
+        <div class="map-card-specs">
+          <span class="map-spec-pill">📏 ${map.width}x${map.height}</span>
+          <span class="map-spec-pill">🛡️ ${map.obstacles.length} ${isPt ? 'Estruturas' : 'Cover'}</span>
+          <span class="map-spec-pill">⚡ ${map.storm.label || 'Storm'}</span>
+        </div>
+        <button class="btn-deploy-map ${isSelected ? 'btn-deployed' : ''}">
+          ${isSelected ? (isPt ? '✓ MAPA ATIVO' : '✓ ACTIVE MAP') : (isPt ? '🚀 SELECIONAR & IMPLANTAR' : '🚀 DEPLOY OPERATIVES')}
+        </button>
+      `;
+
+      const deployBtn = card.querySelector('.btn-deploy-map');
+      deployBtn.addEventListener('click', () => {
+        sound.playClick();
+        this.modalCtrl.closeAll();
+        this.showLoadingTransition(isPt ? map.namePt : map.name, () => {
+          if (this.callbacks.onSelectMap) {
+            this.callbacks.onSelectMap(map.id);
+          }
+        });
+      });
+
+      container.appendChild(card);
+    });
+  }
+
+  showLoadingTransition(mapName, onComplete) {
+    const overlay = document.createElement('div');
+    overlay.className = 'cyber-loading-screen';
+    overlay.innerHTML = `
+      <div class="cyber-loading-box">
+        <div class="cyber-spinner"></div>
+        <h3 class="cyber-loading-title">${i18n.locale === 'pt' ? 'CALIBRANDO PROTOCOLO NEON' : 'CALIBRATING NEON PROTOCOL'}</h3>
+        <p class="cyber-loading-map-name">${mapName.toUpperCase()}</p>
+        <div class="cyber-progress-track">
+          <div class="cyber-progress-bar"></div>
+        </div>
+        <span class="cyber-loading-tip">${i18n.locale === 'pt' ? 'Transferindo telemetria tática dos ciborgues...' : 'Streaming tactical cyborg telemetry...'}</span>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    setTimeout(() => {
+      overlay.classList.add('fade-out');
+      if (onComplete) onComplete();
+      setTimeout(() => {
+        overlay.remove();
+      }, 350);
+    }, 700);
   }
 
   renderSectorsGrid() {

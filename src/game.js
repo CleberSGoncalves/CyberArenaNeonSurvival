@@ -10,14 +10,16 @@
 
 import { FIXED_DT, sanitize, dist, distSq, angleBetween, clamp, resolveCircleBox, resolveCircleCircle, clampToArena } from './physics.js';
 import { SECTORS } from './levels.js';
+import { MAPS, getMapById } from './maps.js';
 import { WEAPONS, ITEMS } from './weapons.js';
-import { Player, Bot, SupplyCrate, StormZone, Bullet } from './entities.js';
+import { Player, Bot, SupplyCrate, StormZone, Bullet, DestructibleCover } from './entities.js';
 import { particles } from './particles.js';
 import { shaker, hitStop, floaters } from './juice.js';
 import { sound } from './audio.js';
 import { storage } from './storage.js';
 import { i18n } from './i18n.js';
 import { crazyGames } from './crazygames.js';
+import { cyberRenderer } from './cyber_renderer.js';
 
 export class GameEngine {
   constructor(canvas, hud) {
@@ -30,9 +32,10 @@ export class GameEngine {
     this.viewH = 720;
     this.camera = { x: 1000, y: 1000, targetX: 1000, targetY: 1000 };
 
-    // State
+    // State & Modular Maps
     this.currentSectorIndex = 0;
     this.sector = SECTORS[0];
+    this.currentMap = MAPS[0];
     this.isPaused = false;
     this.isAdPaused = false;
     this.isRoundOver = false;
@@ -40,12 +43,14 @@ export class GameEngine {
     this.elapsedMatchTime = 0;
     this.hasRevivedThisMatch = false;
 
-    // Entities
+    // Entities & Map Objects
     this.player = null;
     this.bots = [];
     this.crates = [];
     this.pickups = [];
     this.bullets = [];
+    this.destructibleCovers = [];
+    this.obstacles = [];
     this.storm = null;
 
     // Inputs
@@ -122,6 +127,18 @@ export class GameEngine {
     this.loop(this.lastFrameTime);
   }
 
+  loadMap(mapId) {
+    this.currentMap = getMapById(mapId);
+    if (this.hud && this.hud.showLoadingTransition) {
+      const mapName = i18n.locale === 'pt' ? this.currentMap.namePt : this.currentMap.name;
+      this.hud.showLoadingTransition(mapName, () => {
+        this.loadSector(this.currentSectorIndex);
+      });
+    } else {
+      this.loadSector(this.currentSectorIndex);
+    }
+  }
+
   loadSector(sectorIndex) {
     this.currentSectorIndex = Math.min(SECTORS.length - 1, Math.max(0, sectorIndex));
     this.sector = SECTORS[this.currentSectorIndex];
@@ -141,8 +158,12 @@ export class GameEngine {
     this.crates.length = 0;
     this.bots.length = 0;
 
-    const w = this.sector.arenaWidth;
-    const h = this.sector.arenaHeight;
+    const w = this.currentMap ? this.currentMap.arenaWidth : this.sector.arenaWidth;
+    const h = this.currentMap ? this.currentMap.arenaHeight : this.sector.arenaHeight;
+
+    // Merge Map Obstacles and Destructible Covers
+    this.obstacles = [...(this.currentMap.obstacles || []), ...(this.sector.obstacles || [])];
+    this.destructibleCovers = (this.currentMap.destructibleCovers || []).map((c) => new DestructibleCover(c));
 
     // Spawn Player at tactical drop insertion
     const spawnX = w * 0.5 + (Math.random() - 0.5) * 300;
@@ -151,18 +172,19 @@ export class GameEngine {
     this.camera.x = spawnX;
     this.camera.y = spawnY;
 
-    // Spawn Storm Zone
-    this.storm = new StormZone(w, h, this.sector.stormInitialRadius, this.sector.stormShrinkSpeed);
+    // Spawn Storm Zone using map shrink speed & dimensions
+    const stormSpeed = this.currentMap.stormShrinkSpeed || this.sector.stormShrinkSpeed;
+    this.storm = new StormZone(w, h, w * 0.48, stormSpeed);
 
     // Spawn Supply Crates
-    const crateCount = this.sector.crateCount || 10;
+    const crateCount = this.sector.crateCount || 12;
     for (let i = 0; i < crateCount; i++) {
       const cx = 150 + Math.random() * (w - 300);
       const cy = 150 + Math.random() * (h - 300);
       this.crates.push(new SupplyCrate(cx, cy));
     }
 
-    // Spawn Tactical Bots
+    // Spawn Tactical Bots (15 bots = 16 combatants in Battle Royale)
     const botNames = [
       'Zero-One', 'NeonSpectre', 'BitSlayer', 'GhostRider',
       'Viper_X', 'CyberPunk_99', 'DataReaper', 'GlitchCore',
@@ -170,7 +192,8 @@ export class GameEngine {
       'ApexDrifter', 'KinoEnforcer', 'HexDaemon', 'Overrider'
     ];
 
-    for (let i = 0; i < this.sector.botCount; i++) {
+    const botCount = Math.max(15, this.currentMap.initialBotCount || this.sector.botCount || 15);
+    for (let i = 0; i < botCount; i++) {
       const bx = 120 + Math.random() * (w - 240);
       const by = 120 + Math.random() * (h - 240);
       const name = botNames[i % botNames.length];
@@ -287,6 +310,32 @@ export class GameEngine {
     }
   }
 
+  triggerExplosion(x, y, radius, damage) {
+    shaker.addTrauma(0.55);
+    particles.spawnShockwave(x, y, radius * 1.2, '#f97316', 0.45);
+    particles.spawnSparks(x, y, 24, '#ef4444', 280);
+    sound.playShotgun();
+
+    const entities = [this.player, ...this.bots];
+    for (let i = 0; i < entities.length; i++) {
+      const ent = entities[i];
+      if (!ent.isAlive) continue;
+      const d = dist(x, y, ent.x, ent.y);
+      if (d <= radius + ent.radius) {
+        const falloff = 1 - d / (radius + ent.radius);
+        ent.takeDamage(Math.round(damage * falloff));
+      }
+    }
+
+    for (let c = 0; c < this.crates.length; c++) {
+      const cr = this.crates[c];
+      if (!cr.isOpened && dist(x, y, cr.x, cr.y) <= radius + cr.radius) {
+        const drops = cr.takeDamage(damage);
+        if (drops.length > 0) this.pickups.push(...drops);
+      }
+    }
+  }
+
   completeSectorIfEligible() {
     const stars = this.evaluateStars();
     if (stars >= 1) {
@@ -387,7 +436,10 @@ export class GameEngine {
 
     // Aim towards world mouse
     this.mouse.worldX = this.mouse.x + (this.camera.x - this.viewW * 0.5);
-    this.mouse.worldY = this.mouse.y + (this.camera.y - this.viewH * 0.5);
+    cyberRenderer.update(dt);
+    const arenaW = this.currentMap ? this.currentMap.arenaWidth : this.sector.arenaWidth;
+    const arenaH = this.currentMap ? this.currentMap.arenaHeight : this.sector.arenaHeight;
+
     this.player.angle = angleBetween(this.player.x, this.player.y, this.mouse.worldX, this.mouse.worldY);
 
     // Player Shooting
@@ -405,27 +457,33 @@ export class GameEngine {
         this.player.x += this.player.vx * dt;
         this.player.y += this.player.vy * dt;
       }
-      clampToArena(this.player, this.sector.arenaWidth, this.sector.arenaHeight);
+      clampToArena(this.player, arenaW, arenaH);
     }
 
     // 2. Update Bots AI
     for (let i = 0; i < this.bots.length; i++) {
       const bot = this.bots[i];
       if (bot.isAlive) {
-        bot.updateAI(dt, this.player, this.bots, this.crates, this.storm, this.sector.obstacles, this.bullets, this.pickups);
+        bot.updateAI(dt, this.player, this.bots, this.crates, this.storm, this.obstacles, this.bullets, this.pickups);
         bot.x += bot.vx * dt;
         bot.y += bot.vy * dt;
-        clampToArena(bot, this.sector.arenaWidth, this.sector.arenaHeight);
+        clampToArena(bot, arenaW, arenaH);
       }
     }
 
-    // 3. Resolve Obstacle Collisions
+    // 3. Resolve Obstacle & Destructible Collisions
     const entities = [this.player, ...this.bots];
     for (let e = 0; e < entities.length; e++) {
       const ent = entities[e];
       if (!ent.isAlive) continue;
-      for (let o = 0; o < this.sector.obstacles.length; o++) {
-        resolveCircleBox(ent, this.sector.obstacles[o]);
+      for (let o = 0; o < this.obstacles.length; o++) {
+        resolveCircleBox(ent, this.obstacles[o]);
+      }
+      for (let dc = 0; dc < this.destructibleCovers.length; dc++) {
+        const cov = this.destructibleCovers[dc];
+        if (!cov.isDestroyed) {
+          resolveCircleBox(ent, cov);
+        }
       }
     }
 
@@ -468,7 +526,24 @@ export class GameEngine {
     // 6. Update Bullets & Hit Detection
     for (let i = this.bullets.length - 1; i >= 0; i--) {
       const b = this.bullets[i];
-      b.update(dt, this.sector.obstacles);
+      b.update(dt, this.obstacles);
+      if (b.isDead) {
+        this.bullets.splice(i, 1);
+        continue;
+      }
+
+      // Hit Destructible Covers
+      for (let dc = 0; dc < this.destructibleCovers.length; dc++) {
+        const cov = this.destructibleCovers[dc];
+        if (!cov.isDestroyed && dist(b.x, b.y, cov.x + cov.w * 0.5, cov.y + cov.h * 0.5) < b.radius + cov.w * 0.5) {
+          const destroyed = cov.takeDamage(b.damage);
+          b.isDead = true;
+          if (destroyed && cov.explosive) {
+            this.triggerExplosion(cov.x + cov.w * 0.5, cov.y + cov.h * 0.5, 130, 70);
+          }
+          break;
+        }
+      }
       if (b.isDead) {
         this.bullets.splice(i, 1);
         continue;
@@ -558,7 +633,8 @@ export class GameEngine {
         clipAmmo: this.player.clipAmmo,
         reserveAmmo: this.player.reserveAmmo
       },
-      dashPct
+      dashPct,
+      this.currentMap
     );
 
     // 10. Update Camera smooth follow
@@ -581,22 +657,20 @@ export class GameEngine {
     const camTop = this.camera.y - this.viewH * 0.5;
     ctx.translate(-camLeft, -camTop);
 
-    // 1. Draw Cyber Arena Grid Floor
-    this.drawCyberGrid(ctx, camLeft, camTop, camLeft + this.viewW, camTop + this.viewH);
+    // 1. Draw High-Impact Themed Floor
+    cyberRenderer.drawMapFloor(ctx, this.currentMap, camLeft, camTop, camLeft + this.viewW, camTop + this.viewH);
 
-    // 2. Draw Obstacles & Cyber Barriers
-    for (let i = 0; i < this.sector.obstacles.length; i++) {
-      const o = this.sector.obstacles[i];
-      ctx.fillStyle = o.color || '#1e293b';
-      ctx.strokeStyle = o.border || '#00f5ff';
-      ctx.lineWidth = 2.5;
-      ctx.shadowColor = o.border || '#00f5ff';
-      ctx.shadowBlur = 10;
-      ctx.fillRect(o.x, o.y, o.w, o.h);
-      ctx.strokeRect(o.x, o.y, o.w, o.h);
+    // 2. Draw Destructible Covers & Explosive Fuel Barrels
+    for (let i = 0; i < this.destructibleCovers.length; i++) {
+      this.destructibleCovers[i].draw(ctx);
     }
 
-    // 3. Draw Supply Crates & Pickups
+    // 3. Draw Themed Obstacles, Server Racks & Holographic Billboards
+    for (let i = 0; i < this.obstacles.length; i++) {
+      cyberRenderer.drawObstacle(ctx, this.obstacles[i], this.currentMap.theme);
+    }
+
+    // 4. Draw Tactical Drop Pods (Supply Crates) & Holographic Pickups
     for (let i = 0; i < this.crates.length; i++) {
       this.crates[i].draw(ctx);
     }
@@ -604,15 +678,15 @@ export class GameEngine {
       this.pickups[i].draw(ctx);
     }
 
-    // 4. Draw Projectiles
+    // 5. Draw Projectiles
     for (let i = 0; i < this.bullets.length; i++) {
       this.bullets[i].draw(ctx);
     }
 
-    // 5. Draw Particles
+    // 6. Draw Particles
     particles.draw(ctx);
 
-    // 6. Draw Bots & Player
+    // 7. Draw Bots & Player
     for (let i = 0; i < this.bots.length; i++) {
       this.bots[i].draw(ctx);
     }
@@ -620,55 +694,16 @@ export class GameEngine {
       this.player.draw(ctx);
     }
 
-    // 7. Draw Storm Zone
+    // 8. Draw Storm Zone
     this.storm.draw(ctx, camLeft, camTop, camLeft + this.viewW, camTop + this.viewH);
 
-    // 8. Draw Combat Floaters
+    // 9. Draw Combat Floaters
     floaters.draw(ctx);
 
     ctx.restore();
 
-    // 9. Draw Minimap Radar in top right
+    // 10. Draw Minimap Radar in top right
     this.drawMinimap(ctx);
-  }
-
-  drawCyberGrid(ctx, left, top, right, bottom) {
-    const gridSize = 100;
-    const startX = Math.floor(left / gridSize) * gridSize;
-    const startY = Math.floor(top / gridSize) * gridSize;
-
-    ctx.save();
-    ctx.fillStyle = '#050a14';
-    ctx.fillRect(0, 0, this.sector.arenaWidth, this.sector.arenaHeight);
-
-    ctx.strokeStyle = 'rgba(0, 245, 255, 0.08)';
-    ctx.lineWidth = 1;
-
-    for (let x = startX; x <= right; x += gridSize) {
-      if (x >= 0 && x <= this.sector.arenaWidth) {
-        ctx.beginPath();
-        ctx.moveTo(x, Math.max(0, top));
-        ctx.lineTo(x, Math.min(this.sector.arenaHeight, bottom));
-        ctx.stroke();
-      }
-    }
-    for (let y = startY; y <= bottom; y += gridSize) {
-      if (y >= 0 && y <= this.sector.arenaHeight) {
-        ctx.beginPath();
-        ctx.moveTo(Math.max(0, left), y);
-        ctx.lineTo(Math.min(this.sector.arenaWidth, right), y);
-        ctx.stroke();
-      }
-    }
-
-    // Arena Perimeter Wall
-    ctx.strokeStyle = '#00f5ff';
-    ctx.lineWidth = 4;
-    ctx.shadowColor = '#00f5ff';
-    ctx.shadowBlur = 18;
-    ctx.strokeRect(0, 0, this.sector.arenaWidth, this.sector.arenaHeight);
-
-    ctx.restore();
   }
 
   drawMinimap(ctx) {
@@ -679,21 +714,23 @@ export class GameEngine {
 
     ctx.save();
     ctx.fillStyle = 'rgba(7, 13, 28, 0.85)';
-    ctx.strokeStyle = '#00f5ff';
+    ctx.strokeStyle = this.currentMap ? this.currentMap.accentColor : '#00f5ff';
     ctx.lineWidth = 2;
-    ctx.shadowColor = '#00f5ff';
+    ctx.shadowColor = this.currentMap ? this.currentMap.accentColor : '#00f5ff';
     ctx.shadowBlur = 10;
     ctx.fillRect(mapX, mapY, size, size);
     ctx.strokeRect(mapX, mapY, size, size);
 
-    const scaleX = size / this.sector.arenaWidth;
-    const scaleY = size / this.sector.arenaHeight;
+    const arenaW = this.currentMap ? this.currentMap.arenaWidth : this.sector.arenaWidth;
+    const arenaH = this.currentMap ? this.currentMap.arenaHeight : this.sector.arenaHeight;
+    const scaleX = size / arenaW;
+    const scaleY = size / arenaH;
 
     // Storm on minimap
     const stormMx = mapX + this.storm.centerX * scaleX;
     const stormMy = mapY + this.storm.centerY * scaleY;
     const stormMr = this.storm.currentRadius * scaleX;
-    ctx.strokeStyle = '#ef4444';
+    ctx.strokeStyle = this.currentMap ? this.currentMap.stormBorderColor : '#ef4444';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.arc(stormMx, stormMy, stormMr, 0, Math.PI * 2);
