@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#0a192f"/>
+      <stop offset="70%" stop-color="#050a14"/>
+      <stop offset="100%" stop-color="#020408"/>
+    </radialGradient>
+    <linearGradient id="neonCyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f5ff"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+    <linearGradient id="neonMagenta" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f43f5e"/>
+      <stop offset="100%" stop-color="#d946ef"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="100" fill="url(#bg)"/>
+  
+  <!-- Outer Tech Ring -->
+  <circle cx="256" cy="256" r="210" fill="none" stroke="#00f5ff" stroke-width="4" stroke-opacity="0.3" stroke-dasharray="24 12"/>
+  <circle cx="256" cy="256" r="190" fill="none" stroke="#d946ef" stroke-width="2" stroke-opacity="0.5"/>
+
+  <!-- Cyber Shield Emblem -->
+  <path d="M256 90 L380 150 L380 270 C380 350 256 420 256 420 C256 420 132 350 132 270 L132 150 Z" 
+        fill="#071224" stroke="url(#neonCyan)" stroke-width="8" filter="url(#glow)"/>
+        
+  <!-- Digital Visor / Skull Silhouette -->
+  <path d="M190 200 L322 200 L300 250 L212 250 Z" fill="url(#neonMagenta)" filter="url(#glow)"/>
+  <rect x="236" y="270" width="40" height="20" rx="4" fill="#00f5ff" opacity="0.9"/>
+  <circle cx="215" cy="225" r="12" fill="#ffffff"/>
+  <circle cx="297" cy="225" r="12" fill="#ffffff"/>
+  
+  <!-- Targeting Crosshairs -->
+  <line x1="256" y1="40" x2="256" y2="80" stroke="#00f5ff" stroke-width="4"/>
+  <line x1="256" y1="432" x2="256" y2="472" stroke="#00f5ff" stroke-width="4"/>
+  <line x1="40" y1="256" x2="80" y2="256" stroke="#00f5ff" stroke-width="4"/>
+  <line x1="432" y1="256" x2="472" y2="256" stroke="#00f5ff" stroke-width="4"/>
+
+  <!-- Circuit nodes -->
+  <circle cx="132" cy="150" r="8" fill="#d946ef"/>
+  <circle cx="380" cy="150" r="8" fill="#00f5ff"/>
+  <circle cx="256" cy="420" r="10" fill="#00f5ff" filter="url(#glow)"/>
+</svg>

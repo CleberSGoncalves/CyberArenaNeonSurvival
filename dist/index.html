@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>Cyber Arena: Neon Survival - CrazyGames</title>
+    <meta
+      name="description"
+      content="Cyber Arena: Neon Survival - Fast-paced 2D Top-Down Cyberpunk Battle Royale. Scavenge weapons, outsmart rival rogue hackers, escape the collapsing firewall zone and be the last one standing!"
+    />
+    <meta name="theme-color" content="#030712" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="./assets/icon-7M10oxcA.svg" />
+
+    <!-- Google Fonts: Orbitron, Rajdhani & Montserrat -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800;900&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- CrazyGames SDK v3 Official Script -->
+    <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
+    <script>
+      window.addEventListener("contextmenu", function (e) {
+        e.preventDefault();
+      });
+      window.addEventListener("keydown", function (e) {
+        const blockedKeys = ["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Tab"];
+        if (blockedKeys.indexOf(e.code) > -1) e.preventDefault();
+      });
+      document.addEventListener("click", function() {
+        const canvas = document.querySelector("canvas");
+        if (canvas) canvas.focus();
+      }, { once: true });
+    </script>
+    <script type="module" crossorigin src="./assets/index-CSwqo9Fg.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-kukjwkRy.css">
+  </head>
+  <body>
+    <div id="app">
+      <div id="game-stage">
+        <div id="canvas-wrap">
+          <canvas id="game-canvas"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Game Entry Point -->
+  </body>
+</html>
